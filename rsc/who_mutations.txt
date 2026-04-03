@@ -1,0 +1,26 @@
+# WHO-validated PfKelch13 markers of artemisinin partial resistance
+# Source: Malaria: Artemisinin partial resistance, 2025
+# https://www.who.int/news-room/questions-and-answers/item/artemisinin-resistance
+F446I
+P441L
+N458Y
+G449A
+C469Y
+C469F
+M476I
+A481V
+Y493H
+R515K
+R539T
+P527H
+I543T
+N537I
+N537D
+P553L
+G538V
+R561H
+V568G
+P574L
+C580Y
+R622I
+A675V

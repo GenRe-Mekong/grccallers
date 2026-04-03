@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+dockerfile
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Test/scratch outputs (TSVs, FASTAs, VCFs in project root)
+/*.tsv
+rsc/*.fasta
+rsc/*.fai
+rsc/*.vcf.gz
+rsc/*.vcf.gz.tbi
+rsc/*.vcf.gz.csi
+
+# scratch scripts 
+liftover.py
+test.py
+
+# Legacy caller
+legacy/
