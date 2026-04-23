@@ -725,10 +725,8 @@ class CallerBase():
         strand: str,
     ) -> Dict[str, List[AlleleCall]]:
         """
-        # TODO: Need rework on this function, calling all possible combination of alleles at three codon 
-        # positions may leading to reporting non existing mutations.
-
-        Identify any amino acid changes from all possible combination of alleles at three codon positions.
+        Calling amino acid changes for each allele mutations. 
+        Throw a warning when multiple allele combinations can lead to more than one possible alt AAs.
 
         Args:
             codon_call: list of AlleleCall objects for each codon position
@@ -740,6 +738,7 @@ class CallerBase():
             A dict mapping alt amino acid → list of AlleleCall objects that produce it.
         """
         alt_aas_check = set()
+        # Try every possible allele combination in the codon to see what AA it produces, and check if there are multiple alt AAs.
         for b0, b1, b2 in itertools.product(
             codon_call[0].alleles, codon_call[1].alleles, codon_call[2].alleles,
         ):
@@ -762,6 +761,7 @@ class CallerBase():
             if aa != ref_aa:
                 alt_aas_check.add(aa)
             
+        # Throw a warning when multiple allele combinations can lead to more than one possible alt AAs, and call AA by each allele mutation.
         if len(alt_aas_check) > 1:
             logging.warning(f"[{sample}] Alleles combination in codon can produce more than one possible alt AAs ({alt_aas_check})")
             logging.warning(f"[{sample}] Calling AA by single alleles mutation..")
@@ -867,6 +867,7 @@ class CallerBase():
         self._load_records(chrom, start, end)
 
         samples    = self.get_sample_ids()
+        # Get the list of amino acid positions that have at least one variant position in their codon.
         codon_list = self._scan_codon_mutation()   # [aa_number]
         all_results: Dict[str, List[NonSynMutation]] = {s: [] for s in samples}
         qc = qc if qc is not None else self.qc
