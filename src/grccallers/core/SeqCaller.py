@@ -797,10 +797,6 @@ class CallerBase():
         """
         Build a per-sample nucleotide sequence for a genomic region.
 
-        Region resolution (first wins):
-          1. Explicit chrom/start/end arguments.
-          2. CDS span from cds_reader (when available).
-
         Args:
             chrom:  contig name; defaults to CDS chrom when cds_reader is set.
             start:  1-based inclusive start; defaults to CDS start.
@@ -855,11 +851,6 @@ class CallerBase():
 
         Requires a CdsReader (pass cds_reader= at construction time via
         SeqReader.build_cds_reader()).
-
-        Region resolution (first wins):
-          1. Explicit chrom/start/end arguments — useful to narrow the scan to a
-             sub-region, e.g. a single exon.
-          2. Full CDS span from cds_reader (default).
 
         Returns:
             A dict mapping sample ID → list of NonSynMutation objects.
