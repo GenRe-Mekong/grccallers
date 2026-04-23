@@ -137,9 +137,9 @@ class K13Caller(CallerBase):
 
         The calling process applies the following criteria:
         1. Call non-synonymous mutation on Kelch13 gene region.
-        2. Flag STOP codons (alt AA = "_") as "STOP_CODON" call status.
-        3. Flag WHO validated mutations (at codon level).
-        4. Calculate the coverage at WHO-associated positions 
+        2. Calculate the coverage at WHO-associated positions 
+        3. Flag STOP codons (alt AA = "_") as "STOP_CODON" call status.
+        4. Flag WHO validated mutations (at codon level).
         5. Return all called mutation to be used in the parser to write the output files.
 
 
@@ -148,7 +148,11 @@ class K13Caller(CallerBase):
         """
         samples      = self.get_sample_ids()
         logging.info(f"Calling non-synonymous mutations for {len(samples)} sample(s)...")
+
+        # Step 1: Call non-synonymous mutations for all samples that passed the applied QC
         aa_mutations = self.call_non_synonymous(qc=self.qc)
+
+        # Step 2: Calculate the coverage at WHO-associated positions for all samples.
         who_covs     = self._who_list_coverage_all(samples)
 
         results: Dict[str, KelchResult] = {}
@@ -157,19 +161,22 @@ class K13Caller(CallerBase):
             who_cov = who_covs[sample]
             called_muts = []
             for mut in aa_mutations[sample]:
+                # Step 3: Flag STOP codons (alt AA = "_") as "STOP_CODON" call status.
                 if mut.alt_aa == "_":
                     call_status = "STOP_CODON"
                 else:
                     call_status = "PASS"
 
                 is_who_validated = self.who_list.is_confirmed(mut.base_label)
+
+                # Step 4: Flag WHO validated mutations (at codon level).
                 mut = KelchMutation.from_nonsyn(mut, is_who_validated=is_who_validated, call_status=call_status)
                 called_muts.append(mut)
             
             result = KelchResult(
                 sample_id = sample,
                 mutations = called_muts,
-                who_cov   = who_cov,
+                who_cov   = who_cov, # Assign the WHO coverage information to the result for this sample
             )
             results[sample] = result
 

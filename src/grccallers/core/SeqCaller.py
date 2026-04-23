@@ -872,7 +872,6 @@ class CallerBase():
         qc = qc if qc is not None else self.qc
 
         for aa_number in codon_list:
-
             ref_codon: RefCodon = self._cds_reader.query_aa_num(aa_number)  
 
             logging.debug(
@@ -880,12 +879,13 @@ class CallerBase():
             )
 
             for sample in samples:
-                # 1. Evaluate the three codon positions under standard QC and translate to get alt AAs.
                 codon_call: List[AlleleCall] = []
                 for gpos in ref_codon.codon_coords:
+                    # Evaluate the three codon positions under standard QC and translate to get alt AAs.
                     al = self._allele_call(sample, gpos, qc)
                     codon_call.append(al)
                 
+                # Get the alt AAs for this sample at this codon, and the information on the corresponding allele calls.
                 alt_aas: Dict[str, List[AlleleCall]] = self._get_nonsyn_mutation(
                     sample=sample,
                     codon_call=codon_call,
@@ -899,6 +899,7 @@ class CallerBase():
                 if not alt_aas:
                     continue
 
+                # If there are amino-acid changes, push NonSynMutation into the list 
                 for alt_aa, call_list in alt_aas.items():
                     for alleles_info in call_list:
                         mutations.append(NonSynMutation(
