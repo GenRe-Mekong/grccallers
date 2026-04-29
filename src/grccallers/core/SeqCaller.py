@@ -707,8 +707,12 @@ class CallerBase():
                 "Build one with SeqReader.build_cds_reader() and pass it as "
                 "cds_reader= at CallerBase construction."
             )
+        cds_coords = set(self._cds_reader.coding_coords)
         aa_numbers = set()
         for pos in self.get_variant_positions():
+            if pos not in cds_coords:
+                logging.debug(f"Skipping position {pos}: not in coding sequence")
+                continue
             aa_num = self._cds_reader.genomic_to_aa(pos).aa_number
             aa_numbers.add(aa_num)
 
