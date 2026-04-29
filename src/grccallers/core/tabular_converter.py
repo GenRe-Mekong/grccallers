@@ -4,7 +4,7 @@ tabular_converter
 =================
 Convert a legacy tab-delimited genotype file (produced by AmpRecon's
 write_genotype_files.py) into a multi-sample, bgzipped + tabix-indexed VCF
-that can be consumed directly by CallerBase / K13Caller.
+that can be consumed directly by MutationCaller / K13Caller.
 
 The genotype TSV columns are:
     ID  Amplicon  Pos  Chr  Loc  Gen  Depth  Filt
@@ -160,7 +160,7 @@ def _write_vcf(
                 f'##contig=<ID={contig},length={fasta.get_reference_length(contig)}>'
             )
 
-    # FORMAT fields matching what CallerBase._allele_call() expects
+    # FORMAT fields matching what MutationCaller._allele_call() expects
     hdr.add_line('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
     hdr.add_line('##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Total depth">')
     hdr.add_line('##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for ref and alt alleles">')
@@ -183,7 +183,7 @@ def _write_vcf(
         alt_alleles = _collect_alt_alleles(ref_base, per_sample)
 
         # Skip reference-only sites (no ALT alleles) — pysam requires ≥2 alleles,
-        # and CallerBase only scans variant positions anyway.  We still need these
+        # and MutationCaller only scans variant positions anyway.  We still need these
         # sites for DP coverage though, so emit them with a <NON_REF> placeholder.
         if not alt_alleles:
             alt_alleles = ["<NON_REF>"]

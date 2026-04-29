@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-K13Caller.py
+K13Caller
 ==================
-Tool to do the calling of non-synonymous mutations and interpretation of the allele calls at the codon level.
-This it build on top of the SeqReader and CdsReader to handle the reference sequence and coordinate mapping, 
-and provides a CallerBase class that defines the general framework for variant-first calling of non-synonymous mutations.
+Kelch13 propeller-domain mutation caller built on top of MutationCaller.
+
+Extends SeqReader and CdsReader for reference sequence and CDS coordinate
+mapping, and adds K13-specific logic:
+  - WHO-validated mutation flagging (WHOList)
+  - WHO-position coverage reporting (WHOCov)
+  - KelchMutation and KelchResult result types
+  - K13MutationWriter for compact and long-format TSV output
 """
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field, fields
 from typing import Dict, List, Optional, Set, Tuple
-from ..core.SeqCaller import CallerBase, NonSynMutation, SeqReader, CdsReader, QCThresholds, MutationWriter, FastaWriter
+from ..core.SeqCaller import MutationCaller, NonSynMutation, SeqReader, CdsReader, QCThresholds, MutationWriter, FastaWriter
 import pandas as pd
 
 # ============ Setting logging ==============================================
@@ -94,7 +99,9 @@ class WHOList:
     
     def get_aa_mutation_map(self) -> Set[int]:
         """
-        return a map of amino-acid position → set of confirmed alt AAs (e.g. {580: "Y"}) based on the WHO-validated mutation list.
+        Return the set of amino-acid positions covered by WHO-validated mutations
+        (e.g. {580, 539, 578, ...}).  Each position appears at most once regardless
+        of how many alternate AAs are validated at that site.
         """
         aa_map: Set[int] = set()
         for mut in self._mutations:
@@ -114,7 +121,7 @@ class WHOList:
 
 # ========== K13 Caller Implementation ===========================================
 
-class K13Caller(CallerBase):
+class K13Caller(MutationCaller):
 
     def __init__(
         self,
@@ -218,7 +225,7 @@ class K13Caller(CallerBase):
                 uncovered = set(coord_set)  # reset per sample
                 for rec in records:
                     dp = rec.samples[sample].get("DP")
-                    if dp is not None and dp > self.qc.min_dp and rec.pos in uncovered:
+                    if dp is not None and dp >= self.qc.min_dp and rec.pos in uncovered:
                         covered[sample] += 1
                         uncovered.discard(rec.pos)
                 if uncovered:

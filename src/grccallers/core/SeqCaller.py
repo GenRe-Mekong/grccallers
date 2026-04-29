@@ -2,9 +2,11 @@
 """
 SeqCaller
 ==================
-Tool to do the calling at alleles and codon level 
-This require a refernce FASTA and a GFF annotation file to build the mapping between genomic positions and codon positions, 
-and a bgzipped+tabix-indexed VCF/BCF file to query the allele information at each position.
+General-purpose library for calling alleles and codon-level mutations from VCF data.
+
+Requires a bgzipped, tabix-indexed VCF/BCF for allele queries.  A reference
+FASTA and a bgzipped, tabix-indexed GFF3 annotation are optional but needed
+for CDS coordinate mapping and codon translation.
 """
 from __future__ import annotations
 
@@ -115,11 +117,14 @@ class NonSynMutation:
 @dataclass
 class SeqCall:
     """
-    Struct to hold the consensus sequence call for one sample at one codon position.
-        chrom:  chromosome name
-        start:  start position (1-based, inclusive)
-        stop:   stop position (1-based, inclusive)
-        seq: str
+    Called nucleotide sequence for one sample over a genomic region.
+
+        sampleid: sample identifier
+        chrom:    chromosome / contig name
+        start:    start position (1-based, inclusive)
+        stop:     stop position (1-based, inclusive)
+        seq:      called sequence; 'X' at positions with missing depth,
+                  IUPAC ambiguity codes at heterozygous positions
     """
     sampleid: str
     chrom: str
@@ -142,12 +147,16 @@ class SeqCall:
 @dataclass
 class AlleleCall:
     """
-    Struct to hold the single allele call at one genomic position under a certain QC thresholds.
-        alleles:       list of alleles that pass QC at this position (e.g. ["A"] or ["A", "T"])
-        is_missing:    whether the call is missing (e.g. due to low depth)
-        is_het:        whether the call is heterozygous (i.e. contains multiple alleles)
-        dp:            total depth at this position (if available)
-        allele_depths: dict mapping allele → depth (if available) (e.g. {"A": 10, "T": 5})
+    Allele call at a single genomic position after applying QC thresholds.
+
+        chrom:         chromosome / contig name
+        pos:           genomic position (1-based)
+        REF:           reference allele at this position
+        alleles:       alleles that pass QC (e.g. ["A"] or ["A", "T"])
+        is_missing:    True when depth is below threshold or data is absent
+        is_het:        True when more than one allele passes QC
+        dp:            total read depth at this position (None if unavailable)
+        allele_depths: depth per allele (e.g. {"A": 10, "T": 5})
     """
     chrom:         str            
     pos:           int           
@@ -207,9 +216,18 @@ class Feature:
         return None
 
 @dataclass
-class RefCodon: 
+class RefCodon:
     """
-    Struct to hold the reference codon information for a given genomic position.
+    Reference codon at a given amino-acid position.
+
+        chrom:        chromosome / contig name
+        aa_number:    amino-acid position (1-based) within the CDS
+        ref_aa:       reference amino acid (single-letter code; '_' for stop)
+        codon_seq:    three-base reference codon in genomic (forward-strand) orientation
+        codon_coords: genomic coordinates (1-based) of the three codon bases,
+                      ordered 5'→3' on the reference (ascending for '+', descending
+                      order is NOT applied — coords always ascend)
+        strand:       gene strand ('+' or '-')
     """
     chrom: str
     aa_number: int
@@ -396,7 +414,10 @@ class CdsReader:
         # 4. Determine initial reading frame and trim seq/coords
         self._apply_phase_offset()
         
-        # 5. Translate to protein
+        # 5. Build O(1) reverse lookup: genomic position → index in coding_coords
+        self._coord_idx: Dict[int, int] = {pos: i for i, pos in enumerate(self.coding_coords)}
+
+        # 6. Translate to protein
         self.aa = self._translate()
 
     def _build_spliced_model(self) -> Tuple[str, List[int]]:
@@ -449,10 +470,10 @@ class CdsReader:
             - codon_coords: the list of three genomic coordinates for this codon
             - strand: the strand of the gene ("+" or "-")
         """
-        if genomic_pos not in self.coding_coords:
+        if genomic_pos not in self._coord_idx:
             raise ValueError(f"Position {genomic_pos} is not in the coding sequence (may be intronic).")
             
-        idx = self.coding_coords.index(genomic_pos)
+        idx = self._coord_idx[genomic_pos]
         
         if self.strand == "+":
             aa_num = (idx // 3) + 1
@@ -505,20 +526,23 @@ class CdsReader:
     
 # ======== Base Caller ===============================
 
-class CallerBase():
+class MutationCaller:
     """
-    Abstract base for variant-first K13 mutation callers.
+    General-purpose variant-first mutation caller. Usable directly for any
+    VCF + FASTA/GFF region, and designed as a customisable base (Template
+    Method pattern) for gene-specific callers.
 
-    Subclasses implement three methods:
-      _get_sample_ids()          → stable-ordered list of sample IDs
-      _get_variant_positions()   → set of 1-based genomic positions carrying a
-                                   non-REF allele in ≥1 sample within the gene
-      _allele_call()             → AlleleCall for one (sample, position)
+    Override any of the following methods in a subclass to add domain-specific
+    logic without reimplementing the shared calling framework:
 
-    Shared base provides:
-      - codon-grouping from variant positions (_scan_codon_mutation)
-      - codon evaluation via _get_nonsyn_mutation
-      - public call_non_synonymous() and call_seq() entry points
+      get_sample_ids()          → filter or reorder samples
+      get_variant_positions()   → apply region-specific variant pre-filters
+      _allele_call()            → customise per-position allele QC logic
+
+    Shared framework provides:
+      - CDS-aware codon grouping  (_scan_codon_mutation)
+      - codon translation         (_get_nonsyn_mutation)
+      - public entry points       call_non_synonymous(), call_seq()
     """
 
     def __init__(
@@ -587,14 +611,10 @@ class CallerBase():
             for rec in self._vcf.fetch(chrom, start - 1, end)
         }
 
-    # ------ Abstract method ----------------------------------------
-
-    # @abstractmethod
     def get_sample_ids(self) -> List[str]:
         """Return a stable-ordered list of sample IDs in VCF records."""
         return list(self._vcf.header.samples)
 
-    # @abstractmethod
     def get_variant_positions(self ,chrom: Optional[str] = None, start: Optional[int] = None, end: Optional[int] = None ) -> Set[int]:
         """
         Return the set of 1-based genomic positions within
@@ -705,8 +725,17 @@ class CallerBase():
             raise RuntimeError(
                 "Codon-based operations require a CdsReader. "
                 "Build one with SeqReader.build_cds_reader() and pass it as "
-                "cds_reader= at CallerBase construction."
+                "cds_reader= at MutationCaller construction."
             )
+        # Auto-load VCF records for the CDS region if not already loaded,
+        # so _scan_codon_mutation() is safe to call standalone (not only from
+        # call_non_synonymous() which calls _load_records() first).
+        if not self._gene_records:
+            cds_chrom = self._cds_reader.features[0].chrom
+            cds_start = min(f.start for f in self._cds_reader.features)
+            cds_end   = max(f.stop  for f in self._cds_reader.features)
+            self._load_records(cds_chrom, cds_start, cds_end)
+
         cds_coords = set(self._cds_reader.coding_coords)
         aa_numbers = set()
         for pos in self.get_variant_positions():
@@ -743,6 +772,12 @@ class CallerBase():
         Returns:
             A dict mapping alt amino acid → list of AlleleCall objects that produce it.
         """
+        if len(codon_call) != 3:
+            logging.error(
+                f"[{sample}] Expected 3 AlleleCall objects for codon, got {len(codon_call)}; skipping."
+            )
+            return {}
+
         alt_aas_check = set()
         for b0, b1, b2 in itertools.product(
             codon_call[0].alleles, codon_call[1].alleles, codon_call[2].alleles,
@@ -816,9 +851,13 @@ class CallerBase():
         samples = self.get_sample_ids()
         all_seqs: Dict[str, SeqCall] = {}
 
+        # For multi-exon CDS, only iterate coding positions to avoid emitting
+        # intronic bases when cds_reader is set and no explicit range was given.
+        positions = self._cds_reader.coding_coords if self._cds_reader is not None else range(start, end + 1)
+
         for sample in samples:
             seq = ""
-            for gpos in range(start, end + 1):
+            for gpos in positions:
                 call = self._allele_call(sample, gpos, qc=qc)
 
                 if call.is_missing:
@@ -864,7 +903,7 @@ class CallerBase():
             raise RuntimeError(
                 "Codon-based operations require a CdsReader. "
                 "Build one with SeqReader.build_cds_reader() and pass it as "
-                "cds_reader= at CallerBase construction."
+                "cds_reader= at MutationCaller construction."
             )
 
         chrom, start, end = self._resolve_region(chrom, start, end)
